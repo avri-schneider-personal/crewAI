@@ -91,18 +91,15 @@ class CrewAgentParser:
             r"Action\s*\d*\s*:[\s]*(.*?)[\s]*Action\s*\d*\s*Input\s*\d*\s*:[\s]*(.*)"
         )
         action_match = re.search(regex, text, re.DOTALL)
-        if includes_answer:
-            final_answer = text.split(FINAL_ANSWER_ACTION)[-1].strip()
-            # Check whether the final answer ends with triple backticks.
-            if final_answer.endswith("```"):
-                # Count occurrences of triple backticks in the final answer.
-                count = final_answer.count("```")
-                # If count is odd then it's an unmatched trailing set; remove it.
-                if count % 2 != 0:
-                    final_answer = final_answer[:-3].rstrip()
-            return AgentFinish(thought, final_answer, text)
-
-        elif action_match:
+        
+        # Check for conflicting patterns: both action and final answer present
+        if includes_answer and action_match:
+            # Prioritize action execution over final answer to ensure tools get executed
+            # This fixes the gpt-nano issue where models include both patterns
+            pass  # Continue to action_match processing below
+        
+        # Process action match first (prioritize tool execution)
+        if action_match:
             action = action_match.group(1)
             clean_action = self._clean_action(action)
 
@@ -112,6 +109,18 @@ class CrewAgentParser:
             safe_tool_input = self._safe_repair_json(tool_input)
 
             return AgentAction(thought, clean_action, safe_tool_input, text)
+        
+        # Only process final answer if no valid action found
+        elif includes_answer:
+            final_answer = text.split(FINAL_ANSWER_ACTION)[-1].strip()
+            # Check whether the final answer ends with triple backticks.
+            if final_answer.endswith("```"):
+                # Count occurrences of triple backticks in the final answer.
+                count = final_answer.count("```")
+                # If count is odd then it's an unmatched trailing set; remove it.
+                if count % 2 != 0:
+                    final_answer = final_answer[:-3].rstrip()
+            return AgentFinish(thought, final_answer, text)
 
         if not re.search(r"Action\s*\d*\s*:[\s]*(.*?)", text, re.DOTALL):
             raise OutputParserException(
